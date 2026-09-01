@@ -7,12 +7,60 @@
   <meta name="description" content="VyapaarAI — Voice-first digital ledger for modern business" />
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#ffffff">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon192.png">
   <title>VyapaarAI — Voice-first digital ledger</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <!-- LOGIN SHELL (Shown when user is not authenticated) -->
+  <div class="login-shell hidden" id="loginShell">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-mark">V</div>
+        <div class="login-brand-text">
+          <h1>Vyapaar<span>AI</span></h1>
+          <p>Voice-first digital ledger</p>
+        </div>
+      </div>
+      
+      <div class="login-header">
+        <h2>Sign In to Your Account</h2>
+        <p>Enter your credentials to securely access your ledger.</p>
+      </div>
+
+      <form id="loginForm" class="login-form" novalidate autocomplete="on">
+        <div class="alert danger-alert hidden" id="loginAlert" role="alert"></div>
+
+        <div class="form-group">
+          <label for="loginUsername">Username or Email</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">👤</span>
+            <input type="text" id="loginUsername" name="username" class="form-input" placeholder="e.g. bharat" autocomplete="username" required autofocus />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <div class="input-icon-wrap">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="loginPassword" name="password" class="form-input" placeholder="Enter your password" autocomplete="current-password" required />
+            <button type="button" class="password-toggle-btn" id="togglePasswordBtn" title="Toggle password visibility" aria-label="Toggle password visibility">👁</button>
+          </div>
+        </div>
+
+        <button type="submit" class="login-submit-btn" id="loginSubmitBtn">
+          <span>Sign In</span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <p class="login-hint">Credentials: <strong>bharat</strong> &bull; Password: <strong>admin123</strong></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APP SHELL (Protected - Shown after successful authentication) -->
+  <div class="app-shell" id="appShell">
     <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
       <div class="brand">
@@ -104,6 +152,8 @@
               <hr />
               <button class="dropdown-item" data-action="open-shop-settings">⚙ <span data-i18n="shop_settings">Shop Settings</span></button>
               <button class="dropdown-item" data-action="reset-demo-data">🔄 <span data-i18n="refresh_data">Reload Data</span></button>
+              <hr />
+              <button class="dropdown-item danger" data-action="logout">🚪 <span data-i18n="logout">Logout</span></button>
             </div>
           </div>
         </div>
@@ -117,7 +167,7 @@
   </div>
 
   <!-- FLOATING VOICE BUTTON -->
-  <div class="voice-fab" id="voiceFab" role="button" aria-label="Talk to UdhaarAI">
+  <div class="voice-fab" id="voiceFab" role="button" aria-label="Talk to VyapaarAI">
     <span class="mic-icon">●</span>
     <span class="voice-label" data-i18n="talk_udhaar"><b>Talk to VyapaarAI</b></span>
   </div>
@@ -141,7 +191,7 @@
       
       <!-- Manual Speech / Quick Voice Input Fallback -->
       <div class="voice-transcript-box">
-        <div class="voice-transcript" id="voiceTranscript">“Ramesh ne 500 rupaye udhar liye.”</div>
+        <div class="voice-transcript" id="voiceTranscript">“Bolo!”</div>
         <div class="quick-examples">
           <span>Try:</span>
           <button class="quick-prompt-pill" data-text="Ramesh Patil ne 500 rupaye udhar liye">"Ramesh 500 udhar"</button>
@@ -150,33 +200,33 @@
         </div>
       </div>
 
-      <div class="detected-pill" id="detectedLang">Detected: Hindi / Hinglish (hi-IN)</div>
+      <div class="detected-pill" id="detectedLang">Detected: —</div>
 
       <!-- AI UNDERSTOOD / EDITABLE CONTROLS -->
       <div class="ai-card">
         <div class="ai-card-head">
           <strong data-i18n="ai_understood">AI understood</strong>
-          <span id="intentTag">Intent detected</span>
+          <span id="intentTag">Awaiting voice command</span>
         </div>
         <div class="entity-grid">
           <!-- Customer Field -->
           <div class="entity-cell">
             <small data-i18n="customer">Customer</small>
-            <strong id="aiCustomer">Ramesh Patil</strong>
+            <strong id="aiCustomer">—</strong>
             <input id="editCustomer" class="voice-edit-input hidden" type="text" placeholder="Customer name" />
           </div>
 
           <!-- Amount Field -->
           <div class="entity-cell">
             <small data-i18n="amount">Amount</small>
-            <strong id="aiAmount">₹500</strong>
+            <strong id="aiAmount">—</strong>
             <input id="editAmount" class="voice-edit-input hidden" type="number" min="1" step="any" placeholder="Amount" />
           </div>
 
           <!-- Action Field -->
           <div class="entity-cell">
             <small data-i18n="action">Action</small>
-            <strong id="aiAction" class="credit">Udhari</strong>
+            <strong id="aiAction">—</strong>
             <select id="editAction" class="voice-edit-input hidden">
               <option value="udhari">Udhari (Credit)</option>
               <option value="payment">Payment (Received)</option>
@@ -186,7 +236,7 @@
           <!-- Language Field -->
           <div class="entity-cell">
             <small data-i18n="language">Language</small>
-            <strong id="aiLanguage">Hindi</strong>
+            <strong id="aiLanguage">—</strong>
           </div>
         </div>
       </div>
@@ -204,7 +254,7 @@
       <!-- Action Buttons -->
       <div class="confirm-row">
         <button class="secondary-btn" id="editVoice">✎ <span id="editVoiceBtnText">Edit</span></button>
-        <button class="primary-btn" id="confirmVoice">✓ <span data-i18n="confirm_txn">Confirm transaction</span></button>
+        <button class="primary-btn" id="confirmVoice" disabled>✓ <span data-i18n="confirm_txn">Confirm transaction</span></button>
       </div>
       <div class="voice-note" data-i18n="voice_safety_note">For safety, financial entries are saved only after confirmation.</div>
     </section>
@@ -237,7 +287,10 @@
   if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
           navigator.serviceWorker.register("/service-worker.js")
-              .then(() => console.log("Service Worker registered"))
+              .then((reg) => {
+                  console.log("Service Worker registered");
+                  reg.update();
+              })
               .catch(error => console.error("Service Worker error:", error));
      });
   }

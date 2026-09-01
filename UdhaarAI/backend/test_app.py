@@ -223,5 +223,93 @@ class UdhaarAITestCase(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertFalse(res.get_json()['ok'])
 
+    def test_11_auth_login_valid_credentials(self):
+        res = self.client.post('/api/auth/login', json={
+            'username': 'bharat',
+            'password': 'admin123'
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data['ok'])
+        self.assertIn('token', data)
+        self.assertEqual(data['user']['username'], 'bharat')
+
+    def test_12_auth_login_invalid_credentials(self):
+        # Wrong password
+        res = self.client.post('/api/auth/login', json={
+            'username': 'bharat',
+            'password': 'wrongpassword'
+        })
+        self.assertEqual(res.status_code, 401)
+        data = res.get_json()
+        self.assertFalse(data['ok'])
+
+        # Non-existent user
+        res = self.client.post('/api/auth/login', json={
+            'username': 'nonexistent_user',
+            'password': 'admin123'
+        })
+        self.assertEqual(res.status_code, 401)
+        data = res.get_json()
+        self.assertFalse(data['ok'])
+
+    def test_13_auth_login_validation_errors(self):
+        # Missing username
+        res = self.client.post('/api/auth/login', json={
+            'username': '',
+            'password': 'admin123'
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.get_json()['ok'])
+
+        # Missing password
+        res = self.client.post('/api/auth/login', json={
+            'username': 'bharat',
+            'password': ''
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.get_json()['ok'])
+
+    def test_14_auth_me_and_logout(self):
+        # Unauthorized access without token
+        res = self.client.get('/api/auth/me')
+        self.assertEqual(res.status_code, 401)
+
+        # Authorized access with token
+        res = self.client.get('/api/auth/me', headers={'Authorization': 'Bearer test_token'})
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.get_json()['ok'])
+
+        # Logout
+        res = self.client.post('/api/auth/logout')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.get_json()['ok'])
+
+    def test_15_voice_no_unsafe_fallback(self):
+        # Empty speech text -> 400 error
+        res = self.client.post('/api/voice/process', json={'text': ''})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.get_json()['ok'])
+
+        # Whitespace speech text -> 400 error
+        res = self.client.post('/api/voice/process', json={'text': '    '})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.get_json()['ok'])
+
+        # Text with amount but no customer name -> customer must be None (never default to Ramesh Patil)
+        res = self.client.post('/api/voice/process', json={'text': '500 rupaye udhar diye'})
+        self.assertEqual(res.status_code, 200)
+        parsed = res.get_json()['parsed']
+        self.assertIsNone(parsed['customer'])
+        self.assertEqual(parsed['amount'], 500.0)
+
+        # Text with customer name but no amount -> amount must be 0.0 (never default to 500)
+        res = self.client.post('/api/voice/process', json={'text': 'Amit Kumar ko udhari diya'})
+        self.assertEqual(res.status_code, 200)
+        parsed = res.get_json()['parsed']
+        self.assertEqual(parsed['customer'], 'Amit Kumar')
+        self.assertEqual(parsed['amount'], 0.0)
+
 if __name__ == '__main__':
     unittest.main()
+

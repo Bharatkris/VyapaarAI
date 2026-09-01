@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import create_engine
 from backend.models import db, Shop, User, Customer, Product, Transaction, Payment, Bill, BillItem, Reminder, Notification, Setting
 from backend.config import Config
@@ -35,6 +36,26 @@ def init_db(app):
     with app.app_context():
         db.create_all()
         seed_data()
+        ensure_admin_user()
+
+def ensure_admin_user():
+    try:
+        user = User.query.filter_by(username='bharat').first()
+        if not user:
+            user = User(
+                username='bharat',
+                email='bharat@vyapaarai.local',
+                password_hash=generate_password_hash('admin123')
+            )
+            db.session.add(user)
+            db.session.commit()
+        else:
+            # If dummy or not verifiable, update password to admin123
+            if not user.password_hash or not check_password_hash(user.password_hash, 'admin123'):
+                user.password_hash = generate_password_hash('admin123')
+                db.session.commit()
+    except Exception as e:
+        logger.warning(f"Could not ensure admin user: {e}")
 
 def seed_data():
     if Shop.query.first() is not None:
@@ -57,8 +78,8 @@ def seed_data():
     
     user = User(
         username='bharat',
-        email='bharat@udhaarai.local',
-        password_hash='pbkdf2:sha256:dummy'
+        email='bharat@vyapaarai.local',
+        password_hash=generate_password_hash('admin123')
     )
     db.session.add(user)
     db.session.commit()

@@ -6,6 +6,14 @@
 // ================= GLOBAL STATE =================
 const state = {
   page: 'dashboard',
+  authToken: localStorage.getItem('vyapaar_auth_token') || null,
+  user: (() => {
+    try {
+      return JSON.parse(localStorage.getItem('vyapaar_auth_user')) || null;
+    } catch (e) {
+      return null;
+    }
+  })(),
   language: localStorage.getItem('udhaar_lang') || 'hi',
   shop: {
     name: 'Bharat General Store',
@@ -30,17 +38,9 @@ const state = {
     isListening: false,
     isEditing: false,
     transcript: '',
-    parsed: {
-      customer: 'Ramesh Patil',
-      amount: 500,
-      action: 'udhari',
-      language: 'Hindi / Hinglish',
-      item: null,
-      quantity: null,
-      unit: null,
-      price: null,
-      description: 'Voice Udhari entry'
-    }
+    recognizedText: '',
+    sessionId: 0,
+    parsed: null
   },
 
   // Active filters
@@ -64,7 +64,8 @@ const I18N = {
     nav_assistant: 'AI Assistant',
     nav_products: 'Products',
     nav_settings: 'Settings',
-    talk_udhaar: 'Talk to UdhaarAI',
+    talk_udhaar: 'Talk to VyapaarAI',
+    logout: 'Logout',
     voice_assistant: 'VOICE ASSISTANT',
     voice_heading: "Speak naturally. I'll handle the ledger.",
     voice_langs: 'Marathi • Hindi • English • Hinglish',
@@ -108,7 +109,8 @@ const I18N = {
     nav_assistant: 'AI असिस्टेंट',
     nav_products: 'प्रोडक्ट्स (Products)',
     nav_settings: 'सेटिंग्स',
-    talk_udhaar: 'UdhaarAI से बात करें',
+    talk_udhaar: 'VyapaarAI से बात करें',
+    logout: 'लॉगआउट',
     voice_assistant: 'वॉयस असिस्टेंट',
     voice_heading: 'आसानी से बोलें, बहीखाता अपने आप बनेगा।',
     voice_langs: 'मराठी • हिंदी • इंग्लिश • हिंग्लिश',
@@ -152,7 +154,8 @@ const I18N = {
     nav_assistant: 'AI सहाय्यक',
     nav_products: 'उत्पादने (Products)',
     nav_settings: 'सेटिंग्ज',
-    talk_udhaar: 'UdhaarAI शी बोला',
+    talk_udhaar: 'VyapaarAI शी बोला',
+    logout: 'लॉगआउट',
     voice_assistant: 'व्हॉइस असिस्टंट',
     voice_heading: 'सहज बोला, खातेवही आपोआप तयार होईल.',
     voice_langs: 'मराठी • हिंदी • इंग्रजी • हिंग्लिश',
@@ -232,14 +235,20 @@ const API_BASE = (() => {
 
 async function apiFetch(endpoint, options = {}) {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    ...(options.headers || {})
+  };
+
+  if (state.authToken) {
+    headers['Authorization'] = `Bearer ${state.authToken}`;
+  }
+
   try {
     const res = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...(options.headers || {})
-      },
-      ...options
+      ...options,
+      headers
     });
 
     let data;
@@ -247,6 +256,12 @@ async function apiFetch(endpoint, options = {}) {
       data = await res.json();
     } catch (parseErr) {
       throw new Error(`Server returned invalid response (${res.status})`);
+    }
+
+    if (res.status === 401 && !endpoint.includes('/api/auth/login')) {
+      handleLogout(false);
+      showToast('Session expired. Please log in again.', true);
+      throw new Error(data.message || 'Unauthorized');
     }
 
     if (!res.ok || !data.ok) {
@@ -260,13 +275,64 @@ async function apiFetch(endpoint, options = {}) {
     if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
       userMsg = 'Flask server is unavailable. Please ensure the server is running on http://127.0.0.1:5000';
     }
-    showToast(userMsg, true);
+    if (!endpoint.includes('/api/auth/login')) {
+      showToast(userMsg, true);
+    }
     throw err;
   }
 }
 
-// ================= SPEECH RECOGNITION =================
+// ================= SPEECH RECOGNITION & VOICE STATE =================
 let recognition = null;
+
+function resetVoiceSession() {
+  state.voice.isListening = false;
+  state.voice.isEditing = false;
+  state.voice.transcript = '';
+  state.voice.recognizedText = '';
+  state.voice.parsed = null;
+  state.voice.sessionId = Date.now();
+  stopListening();
+  updateListenUI();
+}
+
+function renderVoiceEmptyState() {
+  const voiceTranscriptEl = document.getElementById('voiceTranscript');
+  const aiCustomer = document.getElementById('aiCustomer');
+  const aiAmount = document.getElementById('aiAmount');
+  const aiAction = document.getElementById('aiAction');
+  const aiLanguage = document.getElementById('aiLanguage');
+  const detectedLang = document.getElementById('detectedLang');
+  const intentTag = document.getElementById('intentTag');
+  const itemBar = document.getElementById('voiceItemDetails');
+  const queryBox = document.getElementById('voiceQueryReply');
+  const confirmBtn = document.getElementById('confirmVoice');
+
+  if (voiceTranscriptEl) voiceTranscriptEl.textContent = '“Bolo!”';
+  if (aiCustomer) aiCustomer.textContent = '—';
+  if (aiAmount) aiAmount.textContent = '—';
+  if (aiAction) {
+    aiAction.textContent = '—';
+    aiAction.className = '';
+  }
+  if (aiLanguage) aiLanguage.textContent = '—';
+  if (detectedLang) detectedLang.textContent = 'Detected: —';
+  if (intentTag) intentTag.textContent = 'Awaiting voice command';
+  if (itemBar) itemBar.classList.add('hidden');
+  if (queryBox) queryBox.classList.add('hidden');
+
+  const editCustomer = document.getElementById('editCustomer');
+  const editAmount = document.getElementById('editAmount');
+  const editAction = document.getElementById('editAction');
+  if (editCustomer) editCustomer.value = '';
+  if (editAmount) editAmount.value = '';
+  if (editAction) editAction.value = 'udhari';
+
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `✓ ${t('confirm_txn')}`;
+  }
+}
 
 function setupRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -285,6 +351,13 @@ function setupRecognition() {
   r.onend = () => {
     state.voice.isListening = false;
     updateListenUI();
+    // If no speech was detected in this session
+    if (!state.voice.transcript || !state.voice.transcript.trim()) {
+      const listenStatus = document.getElementById('listenStatus');
+      if (listenStatus && !listenStatus.textContent.includes('denied')) {
+        listenStatus.textContent = "I couldn't hear you. Please speak again.";
+      }
+    }
   };
 
   r.onerror = (e) => {
@@ -292,12 +365,17 @@ function setupRecognition() {
     updateListenUI();
     const listenStatus = document.getElementById('listenStatus');
     if (e.error === 'not-allowed') {
-      listenStatus.textContent = 'Microphone permission denied. Please allow microphone access in browser.';
-    } else if (e.error === 'no-speech') {
-      listenStatus.textContent = 'No speech detected. Tap microphone and speak clearly.';
+      if (listenStatus) listenStatus.textContent = 'Microphone permission denied. Please allow microphone access in browser.';
+    } else if (e.error === 'no-speech' || e.error === 'audio-capture' || e.error === 'network' || e.error === 'aborted') {
+      if (listenStatus) listenStatus.textContent = "I couldn't hear you. Please speak again.";
     } else {
-      listenStatus.textContent = `Voice recognition error (${e.error}). Please try again.`;
+      if (listenStatus) listenStatus.textContent = "I couldn't hear you. Please speak again.";
     }
+    // Never reuse previous input on error
+    state.voice.transcript = '';
+    state.voice.recognizedText = '';
+    state.voice.parsed = null;
+    renderVoiceEmptyState();
   };
 
   r.onresult = (e) => {
@@ -305,9 +383,13 @@ function setupRecognition() {
     for (let i = e.resultIndex; i < e.results.length; i++) {
       transcript += e.results[i][0].transcript;
     }
-    if (transcript.trim()) {
-      document.getElementById('voiceTranscript').textContent = `“${transcript}”`;
-      processVoiceInput(transcript);
+    const trimmed = transcript.trim();
+    if (trimmed) {
+      state.voice.transcript = trimmed;
+      state.voice.recognizedText = trimmed;
+      const voiceTranscriptEl = document.getElementById('voiceTranscript');
+      if (voiceTranscriptEl) voiceTranscriptEl.textContent = `“${trimmed}”`;
+      processVoiceInput(trimmed, state.voice.sessionId);
     }
   };
 
@@ -315,9 +397,16 @@ function setupRecognition() {
 }
 
 function startListening() {
+  // Completely reset voice state for every new session
+  resetVoiceSession();
+  renderVoiceEmptyState();
+
+  const listenStatus = document.getElementById('listenStatus');
+  if (listenStatus) listenStatus.textContent = 'Listening… Speak your transaction or question';
+
   if (!recognition) recognition = setupRecognition();
   if (!recognition) {
-    document.getElementById('listenStatus').textContent = 'Voice recognition is not supported in this browser. Please use Chrome/Edge or click a quick prompt below.';
+    if (listenStatus) listenStatus.textContent = 'Voice recognition is not supported in this browser. Please use Chrome/Edge or click a quick prompt below.';
     return;
   }
   try {
@@ -340,25 +429,40 @@ function updateListenUI() {
 
   if (bigMic) bigMic.classList.toggle('listening', state.voice.isListening);
   if (pulseRing) pulseRing.classList.toggle('active', state.voice.isListening);
-  if (listenStatus) {
-    listenStatus.textContent = state.voice.isListening
-      ? 'Listening… Speak your transaction or question'
-      : t('tap_mic');
+  if (listenStatus && state.voice.isListening) {
+    listenStatus.textContent = 'Listening… Speak your transaction or question';
   }
 }
 
-async function processVoiceInput(text) {
+async function processVoiceInput(text, sessionId = null) {
+  const cleanText = (text || '').trim();
+  if (!cleanText) {
+    state.voice.parsed = null;
+    renderVoiceEmptyState();
+    const listenStatus = document.getElementById('listenStatus');
+    if (listenStatus) listenStatus.textContent = "I couldn't hear you. Please speak again.";
+    return;
+  }
+
   try {
     const res = await apiFetch('/api/voice/process', {
       method: 'POST',
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text: cleanText })
     });
+
+    // Guard against stale asynchronous results from an earlier voice session
+    if (sessionId && sessionId !== state.voice.sessionId) {
+      return;
+    }
+
     if (res.ok && res.parsed) {
       state.voice.parsed = res.parsed;
       renderVoiceParsedData(res.parsed, res.assistant_reply);
     }
   } catch (err) {
     console.error('Error processing voice:', err);
+    const listenStatus = document.getElementById('listenStatus');
+    if (listenStatus) listenStatus.textContent = "I couldn't hear you. Please speak again.";
   }
 }
 
@@ -371,19 +475,30 @@ function renderVoiceParsedData(parsed, assistantReply = null) {
   const intentTag = document.getElementById('intentTag');
   const itemBar = document.getElementById('voiceItemDetails');
   const queryBox = document.getElementById('voiceQueryReply');
+  const confirmBtn = document.getElementById('confirmVoice');
 
-  if (aiCustomer) aiCustomer.textContent = parsed.customer || '—';
-  if (aiAmount) aiAmount.textContent = money(parsed.amount);
+  const hasCustomer = Boolean(parsed && parsed.customer && parsed.customer.trim());
+  const hasAmount = Boolean(parsed && parsed.amount && Number(parsed.amount) > 0);
+
+  if (aiCustomer) aiCustomer.textContent = (parsed && parsed.customer) ? parsed.customer : '—';
+  if (aiAmount) aiAmount.textContent = hasAmount ? money(parsed.amount) : '—';
   if (aiAction) {
-    aiAction.textContent = parsed.action === 'payment' ? 'Payment' : 'Udhari';
-    aiAction.className = parsed.action === 'payment' ? 'payment' : 'credit';
+    if (parsed && parsed.action) {
+      aiAction.textContent = parsed.action === 'payment' ? 'Payment' : 'Udhari';
+      aiAction.className = parsed.action === 'payment' ? 'payment' : 'credit';
+    } else {
+      aiAction.textContent = '—';
+      aiAction.className = '';
+    }
   }
-  if (aiLanguage) aiLanguage.textContent = parsed.language || 'Hindi';
-  if (detectedLang) detectedLang.textContent = `Detected: ${parsed.language} (${parsed.lang_code || 'hi-IN'})`;
+  if (aiLanguage) aiLanguage.textContent = (parsed && parsed.language) ? parsed.language : 'Hindi';
+  if (detectedLang) {
+    detectedLang.textContent = parsed ? `Detected: ${parsed.language || 'Hindi'} (${parsed.lang_code || 'hi-IN'})` : 'Detected: —';
+  }
 
   // Item details
   if (itemBar) {
-    if (parsed.item) {
+    if (parsed && parsed.item) {
       itemBar.classList.remove('hidden');
       document.getElementById('aiItemName').textContent = parsed.item;
       document.getElementById('aiItemQty').textContent = `${parsed.quantity || 1} ${parsed.unit || ''}`;
@@ -401,7 +516,9 @@ function renderVoiceParsedData(parsed, assistantReply = null) {
       if (intentTag) intentTag.textContent = 'Query answered';
     } else {
       queryBox.classList.add('hidden');
-      if (intentTag) intentTag.textContent = parsed.action === 'payment' ? 'Payment intent' : 'Udhari intent';
+      if (intentTag) {
+        intentTag.textContent = (parsed && parsed.action === 'payment') ? 'Payment intent' : 'Udhari intent';
+      }
     }
   }
 
@@ -409,9 +526,15 @@ function renderVoiceParsedData(parsed, assistantReply = null) {
   const editCustomer = document.getElementById('editCustomer');
   const editAmount = document.getElementById('editAmount');
   const editAction = document.getElementById('editAction');
-  if (editCustomer) editCustomer.value = parsed.customer;
-  if (editAmount) editAmount.value = parsed.amount;
-  if (editAction) editAction.value = parsed.action;
+  if (editCustomer) editCustomer.value = (parsed && parsed.customer) || '';
+  if (editAmount) editAmount.value = hasAmount ? parsed.amount : '';
+  if (editAction) editAction.value = (parsed && parsed.action) || 'udhari';
+
+  // Enable confirm button only when required fields (customer & amount > 0) are present
+  if (confirmBtn) {
+    confirmBtn.disabled = !(hasCustomer && hasAmount);
+    confirmBtn.innerHTML = `✓ ${t('confirm_txn')}`;
+  }
 }
 
 function toggleVoiceEditing() {
@@ -425,10 +548,12 @@ function toggleVoiceEditing() {
   const editAmount = document.getElementById('editAmount');
   const editAction = document.getElementById('editAction');
   const editVoiceBtnText = document.getElementById('editVoiceBtnText');
+  const confirmBtn = document.getElementById('confirmVoice');
 
   if (isEditing) {
+    state.voice.parsed = state.voice.parsed || {};
     editCustomer.value = state.voice.parsed.customer || '';
-    editAmount.value = state.voice.parsed.amount || 500;
+    editAmount.value = state.voice.parsed.amount && state.voice.parsed.amount > 0 ? state.voice.parsed.amount : '';
     editAction.value = state.voice.parsed.action || 'udhari';
 
     aiCustomer.classList.add('hidden');
@@ -441,16 +566,17 @@ function toggleVoiceEditing() {
 
     if (editVoiceBtnText) editVoiceBtnText.textContent = 'Done Editing';
   } else {
-    const updatedCust = editCustomer.value.trim() || state.voice.parsed.customer || 'Ramesh Patil';
-    const updatedAmt = parseFloat(editAmount.value) || state.voice.parsed.amount || 500;
+    state.voice.parsed = state.voice.parsed || {};
+    const updatedCust = editCustomer.value.trim();
+    const updatedAmt = parseFloat(editAmount.value) || 0;
     const updatedAct = editAction.value || 'udhari';
 
-    state.voice.parsed.customer = updatedCust;
+    state.voice.parsed.customer = updatedCust || null;
     state.voice.parsed.amount = updatedAmt;
     state.voice.parsed.action = updatedAct;
 
-    aiCustomer.textContent = updatedCust;
-    aiAmount.textContent = money(updatedAmt);
+    aiCustomer.textContent = updatedCust || '—';
+    aiAmount.textContent = updatedAmt > 0 ? money(updatedAmt) : '—';
     aiAction.textContent = updatedAct === 'payment' ? 'Payment' : 'Udhari';
     aiAction.className = updatedAct === 'payment' ? 'payment' : 'credit';
 
@@ -463,6 +589,10 @@ function toggleVoiceEditing() {
     editAction.classList.add('hidden');
 
     if (editVoiceBtnText) editVoiceBtnText.textContent = 'Edit';
+
+    if (confirmBtn) {
+      confirmBtn.disabled = !(updatedCust && updatedAmt > 0);
+    }
   }
 }
 
@@ -470,40 +600,44 @@ async function confirmVoiceTransaction() {
   const confirmBtn = document.getElementById('confirmVoice');
   if (confirmBtn.disabled) return;
 
+  let custName = (state.voice.parsed && state.voice.parsed.customer) ? state.voice.parsed.customer.trim() : '';
+  let amt = (state.voice.parsed && state.voice.parsed.amount) ? Number(state.voice.parsed.amount) : 0;
+  let act = (state.voice.parsed && state.voice.parsed.action) || 'udhari';
+
+  if (state.voice.isEditing) {
+    const editCustomer = document.getElementById('editCustomer');
+    const editAmount = document.getElementById('editAmount');
+    const editAction = document.getElementById('editAction');
+    if (editCustomer) custName = editCustomer.value.trim();
+    if (editAmount) amt = parseFloat(editAmount.value) || 0;
+    if (editAction && editAction.value) act = editAction.value;
+  }
+
+  // Strict validation layer before API request
+  if (!custName) {
+    showToast('Customer name is required before confirming.', true);
+    return;
+  }
+  if (!amt || isNaN(amt) || amt <= 0) {
+    showToast('Amount must be greater than zero.', true);
+    return;
+  }
+
+  // Prevent duplicate submissions / single flight
   confirmBtn.disabled = true;
   confirmBtn.innerHTML = '<span class="spinner"></span> Saving...';
 
   try {
-    let custName = state.voice.parsed.customer || 'Ramesh Patil';
-    let amt = Number(state.voice.parsed.amount) || 500;
-    let act = state.voice.parsed.action || 'udhari';
-
-    if (state.voice.isEditing) {
-      const editCustomer = document.getElementById('editCustomer');
-      const editAmount = document.getElementById('editAmount');
-      const editAction = document.getElementById('editAction');
-      if (editCustomer && editCustomer.value.trim()) custName = editCustomer.value.trim();
-      if (editAmount && editAmount.value.trim()) amt = parseFloat(editAmount.value) || 0;
-      if (editAction && editAction.value) act = editAction.value;
-    }
-
-    if (!custName) {
-      throw new Error('Customer name is required');
-    }
-    if (!amt || isNaN(amt) || amt <= 0) {
-      throw new Error('Amount must be a valid number greater than zero');
-    }
-
     const payload = {
       name: custName,
       amount: amt,
       action: act,
       type: act,
-      description: state.voice.parsed.description || (act === 'payment' ? 'Payment received' : 'Voice transaction'),
-      item: state.voice.parsed.item,
-      quantity: state.voice.parsed.quantity,
-      unit: state.voice.parsed.unit,
-      price: state.voice.parsed.price
+      description: (state.voice.parsed && state.voice.parsed.description) || (act === 'payment' ? 'Payment received' : 'Voice transaction'),
+      item: state.voice.parsed ? state.voice.parsed.item : null,
+      quantity: state.voice.parsed ? state.voice.parsed.quantity : null,
+      unit: state.voice.parsed ? state.voice.parsed.unit : null,
+      price: state.voice.parsed ? state.voice.parsed.price : null
     };
 
     const res = await apiFetch('/api/transactions', {
@@ -520,16 +654,16 @@ async function confirmVoiceTransaction() {
     }
   } catch (err) {
     console.error('Transaction confirmation error:', err);
+    showToast(err.message || 'Error recording transaction', true);
   } finally {
     confirmBtn.disabled = false;
-    confirmBtn.innerHTML = '✓ Confirm transaction';
+    confirmBtn.innerHTML = `✓ ${t('confirm_txn')}`;
   }
 }
 
-
 function openVoiceModal() {
+  resetVoiceSession();
   voiceModalEl.classList.remove('hidden');
-  state.voice.isEditing = false;
   const editVoiceBtnText = document.getElementById('editVoiceBtnText');
   if (editVoiceBtnText) editVoiceBtnText.textContent = 'Edit';
   
@@ -540,12 +674,12 @@ function openVoiceModal() {
   document.getElementById('editAmount').classList.add('hidden');
   document.getElementById('editAction').classList.add('hidden');
   
-  renderVoiceParsedData(state.voice.parsed);
+  renderVoiceEmptyState();
 }
 
 function closeVoiceModal() {
   voiceModalEl.classList.add('hidden');
-  stopListening();
+  resetVoiceSession();
 }
 
 // ================= MODAL HELPERS =================
@@ -771,7 +905,7 @@ function renderDashboardPage() {
         <div class="empty-state-icon">▤</div>
         <h4>No transactions yet</h4>
         <p>Record your first Udhari by voice or manual entry.</p>
-        <button class="primary-btn" data-action="open-voice">🎤 Talk to UdhaarAI</button>
+        <button class="primary-btn" data-action="open-voice">🎤 Talk to VyapaarAI</button>
       </div>`;
 
   return `
@@ -783,7 +917,7 @@ function renderDashboardPage() {
       </div>
       <div class="voice-hero">
         <small>AI VOICE ASSISTANT</small>
-        <h3>“Ramesh ne 500 rupaye udhar liye.”</h3>
+        <h3>“Bolo!”</h3>
         <button class="talk-btn" data-action="open-voice">🎤 ${t('talk_udhaar')}</button>
       </div>
     </section>
@@ -2351,6 +2485,8 @@ function bindGlobalEvents() {
           render();
           showToast('✓ Data reloaded from database');
         });
+      } else if (act === 'logout') {
+        handleLogout(true);
       }
     });
   });
@@ -2646,14 +2782,159 @@ function applyLanguageTranslations() {
   });
 }
 
+// ================= AUTHENTICATION MANAGEMENT =================
+function initAuthUI() {
+  const loginShell = document.getElementById('loginShell');
+  const appShell = document.getElementById('appShell');
+  const voiceFab = document.getElementById('voiceFab');
+
+  if (state.authToken) {
+    if (loginShell) loginShell.classList.add('hidden');
+    if (appShell) appShell.classList.remove('hidden');
+    if (voiceFab) voiceFab.classList.remove('hidden');
+  } else {
+    if (loginShell) loginShell.classList.remove('hidden');
+    if (appShell) appShell.classList.add('hidden');
+    if (voiceFab) voiceFab.classList.add('hidden');
+    closeVoiceModal();
+  }
+}
+
+function bindAuthEvents() {
+  const loginForm = document.getElementById('loginForm');
+  const loginAlert = document.getElementById('loginAlert');
+  const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+  const loginPassword = document.getElementById('loginPassword');
+  const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+
+  if (togglePasswordBtn && loginPassword) {
+    togglePasswordBtn.addEventListener('click', () => {
+      const isPass = loginPassword.type === 'password';
+      loginPassword.type = isPass ? 'text' : 'password';
+      togglePasswordBtn.textContent = isPass ? '🙈' : '👁';
+    });
+  }
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const usernameInput = document.getElementById('loginUsername');
+      const passwordInput = document.getElementById('loginPassword');
+      const username = usernameInput ? usernameInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value.trim() : '';
+
+      if (loginAlert) {
+        loginAlert.textContent = '';
+        loginAlert.classList.add('hidden');
+      }
+
+      // Validation
+      if (!username) {
+        if (loginAlert) {
+          loginAlert.textContent = 'Please enter your username or email address.';
+          loginAlert.classList.remove('hidden');
+        }
+        if (usernameInput) usernameInput.focus();
+        return;
+      }
+
+      if (!password) {
+        if (loginAlert) {
+          loginAlert.textContent = 'Please enter your password.';
+          loginAlert.classList.remove('hidden');
+        }
+        if (passwordInput) passwordInput.focus();
+        return;
+      }
+
+      if (loginSubmitBtn) {
+        loginSubmitBtn.disabled = true;
+        loginSubmitBtn.innerHTML = '<span class="spinner"></span> Signing In...';
+      }
+
+      try {
+        const res = await apiFetch('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password })
+        });
+
+        if (res.ok && res.token) {
+          state.authToken = res.token;
+          state.user = res.user;
+          localStorage.setItem('vyapaar_auth_token', res.token);
+          localStorage.setItem('vyapaar_auth_user', JSON.stringify(res.user));
+
+          if (loginForm) loginForm.reset();
+          if (loginAlert) loginAlert.classList.add('hidden');
+
+          initAuthUI();
+          showToast(`✓ Welcome back, ${res.user.username}!`);
+          await loadInitialData();
+          render();
+        }
+      } catch (err) {
+        console.error('Login failure:', err);
+        if (loginAlert) {
+          loginAlert.textContent = err.message || 'Invalid username or password. Please try again.';
+          loginAlert.classList.remove('hidden');
+        }
+      } finally {
+        if (loginSubmitBtn) {
+          loginSubmitBtn.disabled = false;
+          loginSubmitBtn.innerHTML = '<span>Sign In</span>';
+        }
+      }
+    });
+  }
+}
+
+function handleLogout(showNotification = true) {
+  try {
+    apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  } catch (e) {}
+
+  localStorage.removeItem('vyapaar_auth_token');
+  localStorage.removeItem('vyapaar_auth_user');
+  state.authToken = null;
+  state.user = null;
+
+  const loginForm = document.getElementById('loginForm');
+  const loginAlert = document.getElementById('loginAlert');
+  if (loginForm) loginForm.reset();
+  if (loginAlert) {
+    loginAlert.textContent = '';
+    loginAlert.classList.add('hidden');
+  }
+
+  initAuthUI();
+  if (showNotification) {
+    showToast('Logged out successfully');
+  }
+}
+
 // ================= INITIALIZATION =================
 window.addEventListener('DOMContentLoaded', async () => {
   const langNames = { en: 'English', hi: 'हिंदी', mr: 'मराठी' };
-  document.getElementById('langBtn').textContent = (langNames[state.language] || 'हिंदी') + ' ▾';
+  const langBtn = document.getElementById('langBtn');
+  if (langBtn) {
+    langBtn.textContent = (langNames[state.language] || 'हिंदी') + ' ▾';
+  }
 
   applyLanguageTranslations();
   bindGlobalEvents();
-  await loadInitialData();
-  render();
+  bindAuthEvents();
+
+  if (state.authToken) {
+    initAuthUI();
+    try {
+      await loadInitialData();
+      render();
+    } catch (e) {
+      console.warn('Initial data load notice:', e);
+    }
+  } else {
+    initAuthUI();
+  }
 });
+
 

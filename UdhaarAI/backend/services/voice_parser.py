@@ -37,6 +37,23 @@ def detect_language(text):
     return 'English', 'en-IN'
 
 def extract_entities(text, shop_id=1):
+    if not text or not text.strip():
+        return {
+            'raw_text': '',
+            'customer': None,
+            'amount': 0.0,
+            'action': 'udhari',
+            'item': None,
+            'quantity': None,
+            'unit': None,
+            'price': None,
+            'total': 0.0,
+            'language': 'English',
+            'lang_code': 'en-IN',
+            'is_query': False,
+            'description': ''
+        }
+
     raw_text = text.strip()
     text_lower = raw_text.lower()
     lang_name, lang_code = detect_language(raw_text)
@@ -82,9 +99,6 @@ def extract_entities(text, shop_id=1):
             candidate = match_name.group(1).strip()
             if candidate.lower() not in ['aaj', 'kal', 'total', 'bill', 'shop', 'आज', 'काल']:
                 customer_name = candidate.title()
-        
-    if not customer_name:
-        customer_name = all_customers[0].name if len(all_customers) > 0 else 'Ramesh Patil'
 
     # 3. Extract Quantity and Unit
     quantity = None
@@ -120,7 +134,6 @@ def extract_entities(text, shop_id=1):
                 break
 
     # Check for unit rate / price per unit:
-    # e.g., "100 rupaye kilo ke hisaab se", "100 rs/kg", "50 per kg", "100 rupaye"
     rate_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:₹|rs\.?|rupaye|रुपये|रुपया)?\s*(?:kilo|kg|l|liter|pack|per|प्रति|दर)?\s*(?:ke hisaab se|kilo ke hisaab se|prati|per unit)', text_lower)
     if rate_match:
         try:
@@ -160,9 +173,6 @@ def extract_entities(text, shop_id=1):
                         amount = float(val)
                         break
 
-    if amount == 0.0:
-        amount = 500.0
-
     # Description synthesis
     if item and quantity and unit:
         desc = f"{item} • {quantity:g} {unit}"
@@ -171,7 +181,7 @@ def extract_entities(text, shop_id=1):
     elif is_payment:
         desc = "Payment received"
     else:
-        desc = "Voice Udhari entry"
+        desc = "Voice Udhari entry" if customer_name or amount > 0 else ""
 
     return {
         'raw_text': raw_text,

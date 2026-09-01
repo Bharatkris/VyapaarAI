@@ -1,6 +1,7 @@
 from datetime import datetime, date
 from flask import Blueprint, jsonify, request
-from backend.models import db, Shop, Customer, Product, Transaction, Payment, Bill, BillItem, Reminder, Notification, Setting
+from werkzeug.security import check_password_hash, generate_password_hash
+from backend.models import db, Shop, User, Customer, Product, Transaction, Payment, Bill, BillItem, Reminder, Notification, Setting
 from backend.services.voice_parser import extract_entities
 from backend.services.ledger_service import record_transaction, recalculate_customer_balance
 from backend.services.report_service import get_dashboard_summary, get_reports_data
@@ -14,9 +15,65 @@ def health():
     return jsonify({
         'ok': True,
         'status': 'healthy',
-        'service': 'UdhaarAI Python API',
+        'service': 'VyapaarAI Python API',
         'database': db.engine.name
     })
+
+# ----------------- AUTHENTICATION -----------------
+@api_bp.post('/auth/login')
+def login():
+    data = request.get_json(silent=True) or {}
+    identifier = (data.get('username') or data.get('email') or '').strip()
+    password = (data.get('password') or '').strip()
+
+    if not identifier:
+        return jsonify({'ok': False, 'message': 'Please enter your username or email address'}), 400
+    if not password:
+        return jsonify({'ok': False, 'message': 'Please enter your password'}), 400
+
+    user = User.query.filter(
+        (User.username.ilike(identifier)) | (User.email.ilike(identifier))
+    ).first()
+
+    if not user:
+        return jsonify({'ok': False, 'message': 'Invalid username/email or password'}), 401
+
+    if not user.password_hash or not check_password_hash(user.password_hash, password):
+        return jsonify({'ok': False, 'message': 'Invalid username/email or password'}), 401
+
+    token = f"vyapaar_{user.id}_{int(datetime.utcnow().timestamp())}"
+    shop = Shop.query.get(1)
+
+    return jsonify({
+        'ok': True,
+        'message': 'Login successful',
+        'token': token,
+        'user': user.to_dict(),
+        'shop': shop.to_dict() if shop else {}
+    })
+
+@api_bp.get('/auth/me')
+def get_current_user():
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header.replace('Bearer ', '').strip()
+    if not token:
+        return jsonify({'ok': False, 'message': 'Authentication required'}), 401
+
+    user = User.query.first()
+    if not user:
+        return jsonify({'ok': False, 'message': 'User not found'}), 404
+
+    shop = Shop.query.get(1)
+    return jsonify({
+        'ok': True,
+        'user': user.to_dict(),
+        'shop': shop.to_dict() if shop else {}
+    })
+
+@api_bp.post('/auth/logout')
+def logout():
+    return jsonify({'ok': True, 'message': 'Logged out successfully'})
+
 
 
 # ----------------- DASHBOARD -----------------
