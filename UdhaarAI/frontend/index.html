@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="description" content="VyapaarAI — Voice-first digital ledger for modern business" />
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <title>VyapaarAI — Voice-first digital ledger</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">V</div>
+        <div>
+          <h1>Vyapaar<span>AI</span></h1>
+          <p data-i18n="tagline">Voice-first ledger</p>
+        </div>
+      </div>
+      <nav class="side-nav" id="sideNav">
+        <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span> <span data-i18n="nav_dashboard">Dashboard</span></button>
+        <button class="nav-item" data-page="customers"><span class="nav-icon">◉</span> <span data-i18n="nav_customers">Customers</span></button>
+        <button class="nav-item" data-page="ledger"><span class="nav-icon">▤</span> <span data-i18n="nav_ledger">Udhari</span></button>
+        <button class="nav-item" data-page="payments"><span class="nav-icon">₹</span> <span data-i18n="nav_payments">Payments</span></button>
+        <button class="nav-item" data-page="bills"><span class="nav-icon">▧</span> <span data-i18n="nav_bills">Bills</span></button>
+        <button class="nav-item" data-page="reminders"><span class="nav-icon">◌</span> <span data-i18n="nav_reminders">Reminders</span></button>
+        <button class="nav-item" data-page="reports"><span class="nav-icon">◒</span> <span data-i18n="nav_reports">Reports</span></button>
+        <button class="nav-item" data-page="assistant"><span class="nav-icon">✦</span> <span data-i18n="nav_assistant">AI Assistant</span></button>
+        <button class="nav-item" data-page="products"><span class="nav-icon">□</span> <span data-i18n="nav_products">Products</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span> <span data-i18n="nav_settings">Settings</span></button>
+        <div class="shop-mini" id="shopMini" title="Shop Profile">
+          <div class="avatar" id="shopMiniAvatar">BG</div>
+          <div class="shop-mini-info">
+            <strong id="shopMiniName">Bharat General Store</strong>
+            <span id="shopMiniAddress">JSPM Market, Pune</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN APP AREA -->
+    <main class="main">
+      <!-- TOPBAR -->
+      <header class="topbar">
+        <button class="icon-btn mobile-only" id="menuBtn" aria-label="Open menu">☰</button>
+        <div class="topbar-title">
+          <span id="pageEyebrow">OVERVIEW</span>
+          <strong id="pageTitle">Dashboard</strong>
+        </div>
+        <div class="topbar-actions">
+          <!-- Global Search Box -->
+          <div class="search-container">
+            <div class="search-box">
+              <span>⌕</span>
+              <input id="globalSearch" placeholder="Search customers, bills..." autocomplete="off" />
+              <button class="search-clear hidden" id="searchClear">×</button>
+            </div>
+            <div class="search-dropdown hidden" id="searchDropdown"></div>
+          </div>
+
+          <!-- Language Selector -->
+          <div class="dropdown-wrapper">
+            <button class="pill-btn" id="langBtn">हिंदी ▾</button>
+            <div class="dropdown-menu hidden" id="langMenu">
+              <button class="dropdown-item" data-lang="en">English</button>
+              <button class="dropdown-item" data-lang="hi">हिंदी (Hindi)</button>
+              <button class="dropdown-item" data-lang="mr">मराठी (Marathi)</button>
+            </div>
+          </div>
+
+          <!-- Notifications Button & Panel -->
+          <div class="dropdown-wrapper">
+            <button class="icon-btn" id="notifyBtn" aria-label="Notifications">
+              🔔<i id="notifyBadge" class="hidden"></i>
+            </button>
+            <div class="dropdown-menu notify-panel hidden" id="notifyMenu">
+              <div class="notify-head">
+                <strong data-i18n="notifications">Notifications</strong>
+                <button class="text-btn" id="markAllReadBtn" data-i18n="mark_read">Mark all read</button>
+              </div>
+              <div class="notify-list" id="notifyList"></div>
+            </div>
+          </div>
+
+          <!-- Profile Menu -->
+          <div class="dropdown-wrapper">
+            <button class="profile-btn" id="profileBtn">
+              <span class="avatar" id="topAvatar">BG</span>
+              <span id="topOwnerName">Bharat</span>
+              <b>⌄</b>
+            </button>
+            <div class="dropdown-menu profile-menu hidden" id="profileMenu">
+              <div class="profile-info-box">
+                <strong id="profileMenuName">Bharat</strong>
+                <span id="profileMenuShop">Bharat General Store</span>
+              </div>
+              <hr />
+              <button class="dropdown-item" data-action="open-shop-settings">⚙ <span data-i18n="shop_settings">Shop Settings</span></button>
+              <button class="dropdown-item" data-action="reset-demo-data">🔄 <span data-i18n="refresh_data">Reload Data</span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- DYNAMIC CONTENT -->
+      <div class="content" id="content">
+        <!-- Injected via JavaScript based on active route -->
+      </div>
+    </main>
+  </div>
+
+  <!-- FLOATING VOICE BUTTON -->
+  <div class="voice-fab" id="voiceFab" role="button" aria-label="Talk to UdhaarAI">
+    <span class="mic-icon">●</span>
+    <span class="voice-label" data-i18n="talk_udhaar"><b>Talk to VyapaarAI</b></span>
+  </div>
+
+  <!-- VOICE ASSISTANT MODAL -->
+  <div class="modal-backdrop hidden" id="voiceModal">
+    <section class="voice-modal" role="dialog" aria-modal="true" aria-labelledby="voiceTitle">
+      <button class="close-modal" id="closeVoice" aria-label="Close modal">×</button>
+      <div class="voice-head">
+        <span class="eyebrow" data-i18n="voice_assistant">VOICE ASSISTANT</span>
+        <h2 id="voiceTitle" data-i18n="voice_heading">Speak naturally. I'll handle the ledger.</h2>
+        <p data-i18n="voice_langs">Marathi • Hindi • English • Hinglish</p>
+      </div>
+
+      <div class="voice-stage">
+        <div class="pulse-ring" id="pulseRing"></div>
+        <button class="big-mic" id="bigMic" aria-label="Start voice recognition">●</button>
+      </div>
+
+      <div class="listen-status" id="listenStatus" data-i18n="tap_mic">Tap the microphone and speak</div>
+      
+      <!-- Manual Speech / Quick Voice Input Fallback -->
+      <div class="voice-transcript-box">
+        <div class="voice-transcript" id="voiceTranscript">“Ramesh ne 500 rupaye udhar liye.”</div>
+        <div class="quick-examples">
+          <span>Try:</span>
+          <button class="quick-prompt-pill" data-text="Ramesh Patil ne 500 rupaye udhar liye">"Ramesh 500 udhar"</button>
+          <button class="quick-prompt-pill" data-text="Suresh Traders ne 700 rupaye payment diya">"Suresh 700 payment"</button>
+          <button class="quick-prompt-pill" data-text="Neha General Store ko 2 kilo sugar 100 rupaye ke hisaab se udhar diya">"Neha 2kg sugar @100"</button>
+        </div>
+      </div>
+
+      <div class="detected-pill" id="detectedLang">Detected: Hindi / Hinglish (hi-IN)</div>
+
+      <!-- AI UNDERSTOOD / EDITABLE CONTROLS -->
+      <div class="ai-card">
+        <div class="ai-card-head">
+          <strong data-i18n="ai_understood">AI understood</strong>
+          <span id="intentTag">Intent detected</span>
+        </div>
+        <div class="entity-grid">
+          <!-- Customer Field -->
+          <div class="entity-cell">
+            <small data-i18n="customer">Customer</small>
+            <strong id="aiCustomer">Ramesh Patil</strong>
+            <input id="editCustomer" class="voice-edit-input hidden" type="text" placeholder="Customer name" />
+          </div>
+
+          <!-- Amount Field -->
+          <div class="entity-cell">
+            <small data-i18n="amount">Amount</small>
+            <strong id="aiAmount">₹500</strong>
+            <input id="editAmount" class="voice-edit-input hidden" type="number" min="1" step="any" placeholder="Amount" />
+          </div>
+
+          <!-- Action Field -->
+          <div class="entity-cell">
+            <small data-i18n="action">Action</small>
+            <strong id="aiAction" class="credit">Udhari</strong>
+            <select id="editAction" class="voice-edit-input hidden">
+              <option value="udhari">Udhari (Credit)</option>
+              <option value="payment">Payment (Received)</option>
+            </select>
+          </div>
+
+          <!-- Language Field -->
+          <div class="entity-cell">
+            <small data-i18n="language">Language</small>
+            <strong id="aiLanguage">Hindi</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item Details Sub-card (When item detected) -->
+      <div class="item-detail-bar hidden" id="voiceItemDetails">
+        <span>Item: <strong id="aiItemName">—</strong></span>
+        <span>Qty: <strong id="aiItemQty">—</strong></span>
+        <span>Rate: <strong id="aiItemRate">—</strong></span>
+      </div>
+
+      <!-- Query result container (When user asks a query) -->
+      <div class="voice-query-reply hidden" id="voiceQueryReply"></div>
+
+      <!-- Action Buttons -->
+      <div class="confirm-row">
+        <button class="secondary-btn" id="editVoice">✎ <span id="editVoiceBtnText">Edit</span></button>
+        <button class="primary-btn" id="confirmVoice">✓ <span data-i18n="confirm_txn">Confirm transaction</span></button>
+      </div>
+      <div class="voice-note" data-i18n="voice_safety_note">For safety, financial entries are saved only after confirmation.</div>
+    </section>
+  </div>
+
+  <!-- GENERIC MODAL CONTAINER FOR APP FORMS (Customer, Udhari, Payment, Bill, Product, Reminder) -->
+  <div class="modal-backdrop hidden" id="appModalBackdrop">
+    <div class="app-modal" id="appModal">
+      <button class="close-modal" id="closeAppModal">×</button>
+      <div id="appModalContent"></div>
+    </div>
+  </div>
+
+  <!-- PRINTABLE INVOICE MODAL -->
+  <div class="modal-backdrop hidden" id="invoiceModalBackdrop">
+    <div class="invoice-modal" id="invoiceModal">
+      <div class="invoice-actions no-print">
+        <button class="secondary-btn" id="closeInvoiceBtn">✕ Close</button>
+        <button class="primary-btn" id="printInvoiceBtn">🖨 Print / PDF</button>
+      </div>
+      <div class="invoice-printable" id="invoicePrintableArea"></div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+  <script>
+  if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js")
+              .then(() => console.log("Service Worker registered"))
+              .catch(error => console.error("Service Worker error:", error));
+     });
+  }
+</script>
+</body>
+</html>
